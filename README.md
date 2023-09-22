@@ -34,3 +34,9 @@ Requires python3.9
   - clean_data: cleans data for the research analysis 
   
 [^1] : Moore, R., Casale, F. P., Bonder, M. J., Horta, D., Franke, L., Barroso, I., & Stegle, O. (2018).[ A linear mixed-model approach to study multivariate gene–environment interactions](https://www.nature.com/articles/s41588-018-0271-0) (p. 1). Nature Publishing Group.
+
+## CellRegMap
+The extended work from StructLMM becames StructLMM2 better known  [CellRegMap](https://limix.github.io/CellRegMap/usage.html)
+
+### structlmm_cellregmap.py
+
