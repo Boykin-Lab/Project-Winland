@@ -47,5 +47,5 @@ Requires python3.9
 - run_structlmm_test(): performs StructLMM2 (CellRegMap) 
 - normalize_env_matrix(): normalizes values across multiple environmental variables
 - create_snp_queue(): Creates an iterator to loop over the Genomic data which is usually a Dask array rather than pandas, this function will create batches for the genomic data in panda Dataframes   
-- compute_kinship(): creates a kinship matrix for the genomic data, required as parameter for CellRegMap.
+- compute_kinship(): creates a kinship matrix for the genomic data, required as a parameter for CellRegMap.
 
