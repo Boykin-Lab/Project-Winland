@@ -23,7 +23,7 @@ The Winland Project can run 3 analyses: random, pseudo, research
 - research: uses data from real UKBiobank variables
 
 Requires python3.9
-`usage: python winland-structlmm <research | pseudo | random> [...path]`
+`usage: python structlmm-cellregmap.py `
 
   - random_analysis: uses randomly generated data created using the python Random library
   - example_analysis: uses [pseudo data](https://github.com/limix/limix-lmm/tree/0f0a9875e6d0ed0511db54c911992332b76baa13/doc/data_structlmm) referenced in structlmm [documentation](https://buildmedia.readthedocs.org/media/pdf/struct-lmm/stable/struct-lmm.pdf)
@@ -39,4 +39,13 @@ Requires python3.9
 The extended work from StructLMM becames StructLMM2 better known  [CellRegMap](https://limix.github.io/CellRegMap/usage.html)
 
 ### structlmm_cellregmap.py
+
+Requires python3.9
+`usage: python structlmm-cellregmap.py `
+- example_interaction_analysis(): Used as an example call for running the interaction test. When the hk parameter is set to None the interaction test should run as a StructLmm however this is currently a problem with the use of StructLMM2.
+- run_interaction_analysis(): Once non-genetic data has been preprocessed and downsampled to the set N (global variable) the genetic data is imported within this function before sending all data to be tested
+- run_structlmm_test(): performs StructLMM2 (CellRegMap) 
+- normalize_env_matrix(): normalizes values across multiple environmental variables
+- create_snp_queue(): Creates an iterator to loop over the Genomic data which is usually a Dask array rather than pandas, this function will create batches for the genomic data in panda Dataframes   
+- compute_kinship(): creates a kinship matrix for the genomic data, required as parameter for CellRegMap.
 
