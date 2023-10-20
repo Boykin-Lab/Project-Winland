@@ -291,7 +291,7 @@ def run_structlmm_test(y, W, E, G, bim, tests):
             pv = run_interaction(y=y, G=down_x, W=W, E=E, hK=hK)[0]
             with open(f'{N}Sampleout/{PHENO_PATH}/{CHROM}pv_snp.txt', "a") as w: 
                 print(f'Interaction test p-value: {pv[0]}')
-                w.write(f'{pv[0]},{snp},{t.time()} \n')
+                w.write(f'{pv[0]},{snp} \n')
             w.close()
             
             # except Exception as e:
