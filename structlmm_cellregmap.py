@@ -13,6 +13,9 @@ from sklearn.impute import SimpleImputer
 from cellregmap import run_association, run_interaction, estimate_betas
 from pandas_plink import read_plink
 import logging
+import multiprocessing
+from multiprocessing import pool
+
 """
 Dev notes : if you have problems installing the package into python env
  then install directly with python version from env 
@@ -34,64 +37,15 @@ ENV_RENAME_DICT = {
     "24507-0.0": "24507", "24508-0.0": "24508"
 }  
 
+# TODO: 
+# Make function to parse genomic data from bim indices 
+
 
 N = 10_000
+SNP_CHROM_ARR = []
+# CHROM = "22"
 #ranges for snps in the UK_LD.bim 
-snp_chr_ranges  = [
-# ("01" ,801536 , 249218540) 
-# ("02" , 29350 , 242846855),
-# ("03" , 72365 , 197840071),
-# ("04" , 71566 , 190868396),
-# ("05" , 31679 , 180687212),
-# ("06" , 203397 , 170889829),
-# ("07" , 43748 , 159085413),
-# ("08" , 164984 , 146285083),
-# ("09" , 45440 , 141066490),
-# ("10" , 111955 , 135426536),
-# ("11" , 193146 , 134936055),
-# ("12" , 208819 , 133810935),
-# ("13" , 19121950 , 115096858),
-# ("14" , 19336265 , 107250736),
-# ("15" , 20163574 , 102383093),
-# ("16" , 85667 , 90170095),
-# ("17" , 6157 , 81051887),
-# ("18" , 82931 , 77998496),
-# ("19" , 260970 , 59083268),
-# ("20" , 65900 , 62915231),
-# ("21" , 14700000 , 48100000) #range doesnt work 
-("22" , 17500000 , 28500000)
-]
 
-"""
-Running 
-"""
-
-"""
-    bim[(bim.chrom == "1") & (bim.pos < 245379820)] , n = 31947
-    bim[(bim.chrom == "2") & (bim.pos < 232498693)]  , n = 30338
-    bim[(bim.chrom == "3") & (bim.pos < 197119835)]  , n = 27723
-    bim[(bim.chrom == "4") & (bim.pos < 197119835)]  , n = 25892
-    bim[(bim.chrom == "5") & (bim.pos < 180695849)]  , n = 25228
-    bim[(bim.chrom == "6") & (bim.pos < 170907734)] , n = 28020
-    bim[(bim.chrom == "7") & (bim.pos < 159124173)] , n = 22451
-    bim[(bim.chrom == "8") & (bim.pos < 146292681)] , n = 21240
-    bim[(bim.chrom == "9") & (bim.pos < 141066490)] , n = 17955
-    bim[(bim.chrom == "10") & (bim.pos < 135426536)] , n = 20483
-    bim[(bim.chrom == "11") & (bim.pos < 134942100)] , n = 20407
-    bim[(bim.chrom == "12") & (bim.pos < 133831319)] , n = 19549
-    bim[(bim.chrom == "13") & (bim.pos < 115103150)] , n = 14101
-    bim[(bim.chrom == "14") & (bim.pos < 107282437)] , n = 13152
-    bim[(bim.chrom == "15") & (bim.pos < 102388991)] , n = 12356
-    bim[(bim.chrom == "16") & (bim.pos < 90170095)] , n = 13988
-    bim[(bim.chrom == "17") & (bim.pos < 81051887)] , n = 13002
-    bim[(bim.chrom == "18") & (bim.pos < 78015180)] , n = 12341
-    bim[(bim.chrom == "19") & (bim.pos < 59094374)] , n = 10645
-    bim[(bim.chrom == "20") & (bim.pos < 62915231)] , n = 10803
-    bim[(bim.chrom == "21") & (bim.pos < 48099610)] , n = 6117
-    bim[(bim.chrom == "22") & (bim.pos < 51193629)] , n = 6461
-
-
-"""
     
 logging.basicConfig(level=logging.INFO)
 def normalize_env_matrix(E, norm_type="linear_covariance"):
@@ -117,9 +71,11 @@ def normalize_env_matrix(E, norm_type="linear_covariance"):
     E = E[:, E.std(0) > 0]
     E -= E.mean(axis=0)
     E /= E.std(axis=0)
-
+    #z - score calculation 
     # Helper function for linear_covariance normalization
+
     def linear_covariance(E):
+        
         return E * np.sqrt(E.shape[0] / np.sum(E ** 2))
 
     # Helper function for weighted_covariance normalization
@@ -144,7 +100,7 @@ def normalize_env_matrix(E, norm_type="linear_covariance"):
     return E
 
 
-def create_snp_queue(G, bim, Isnp):
+def create_snp_queue(G, bim, Isnp=None):
     """
     Prepares a queue of genotypic data after applying various preprocessing steps.
 
@@ -164,8 +120,9 @@ def create_snp_queue(G, bim, Isnp):
     """
     
     # Query the specific SNPs using Isnp
-    G, bim_out = gs.snp_query(G, bim, Isnp)
-    # print(bim_out)
+    G, bim_out = gs.snp_query(G, bim, bim.chrom==CHROM)
+    
+    print(bim_out)
     if bim_out.empty:
         logging.error("Bad range, empty range")
         return 
@@ -219,29 +176,29 @@ def partition_dataframe(df, p):
     return partitions
 
 
-def snp_query(G, bim, Isnp):
-    r"""
-    Parameters
-    ----------
-    G : (`n_snps`, `n_inds`) array
-        Genetic data
-    bim : pandas.DataFrame
-        Variant annotation
-    Isnp : bool array
-        Variant filter
+# def snp_query(G, bim, Isnp):
+#     r"""
+#     Parameters
+#     ----------
+#     G : (`n_snps`, `n_inds`) array
+#         Genetic data
+#     bim : pandas.DataFrame (example : (bim.chrom == "22") ) 
+#         Variant annotation
+#     Isnp : bool array
+#         Variant filter
 
     
-    Returns
-    -------
-    G_out : (`n_snps`, `n_inds`) array
-        filtered genetic data
-    bim_out : dataframe
-        filtered variant annotation
-    """
-    bim_out = bim[Isnp].reset_index(drop=True)
-    G_out = G[bim_out.i.values]
-    bim_out.i = pd.Series(sp.arange(bim_out.shape[0]), index=bim_out.index)
-    return G_out, bim_out
+#     Returns
+#     -------
+#     G_out : (`n_snps`, `n_inds`) array
+#         filtered genetic data
+#     bim_out : dataframe
+#         filtered variant annotation
+#     """
+#     bim_out = bim[Isnp].reset_index(drop=True)
+#     G_out = G[bim_out.i.values]
+#     bim_out.i = pd.Series(sp.arange(bim_out.shape[0]), index=bim_out.index)
+#     return G_out, bim_out
 
 def compute_kinship(X):
     """
@@ -264,8 +221,7 @@ def compute_kinship(X):
     return K
 
 
-# Create a pandas DataFrame (replace this with your own data)
-# data = {'Column1': range(1, 101)}
+
 def partition(df, p):
     """
     Input: 
@@ -273,9 +229,6 @@ def partition(df, p):
         p : number of desired partition 
 
     """
-
-    # Set the number of batches
-    p = 5
 
     # Calculate the size of each batch
     batch_size = len(df) // p
@@ -293,81 +246,62 @@ def partition(df, p):
         print(batch)
         print()
     return batches 
-# N = 10,000
-# P = 1000
-# E = N / P  
-# i = 0 
-# [1, 2, 3, 4]
-# for i in range(E):
-#     N[P*E, 2(P*E)]
+
 
 def run_structlmm_test(y, W, E, G, bim, tests):
     # Core testing logic from the original run_structlmm without reading the PLINK bed file
-
+    global CHROM
+    global PHENO_PATH
     TESTS = ['interaction', 'association']
-    Isnp_arr = []
-    for i in range(len(snp_chr_ranges)):
-        Isnp_arr.append(gs.is_in(bim, snp_chr_ranges[i]))
+    
 
     pv_matrix = []
-    for Isnp in Isnp_arr:
-        num_batch = 0
-        queue = create_snp_queue(G, bim, Isnp)
-        if queue == None:
-            print("! ERROR : QUEUE RANGE INCORRECT!", )
-            return
-        res = []
-        n_analyzed = 0
-        t0 = time.time()
-        
-        for _G, _bim in queue:
-            num_batch+=1
-            _pv = zeros(_G.shape[1])
-            _pv_int = zeros(_G.shape[1])
-            # n_analyzed += _G.shape[1]
+    num_batch = 0
+    queue = create_snp_queue(G, bim)
+    if queue == None:
+        print("! ERROR : QUEUE RANGE INCORRECT!", )
+        return
+    res = []
+    n_analyzed = 0
+    t0 = time.time()
+    
+    for _G, _bim in queue:
+        num_batch+=1
+        _pv = zeros(_G.shape[1])
+        _pv_int = zeros(_G.shape[1])
+        # n_analyzed += _G.shape[1]
 
-            downsample_G = downsample_data(pd.DataFrame(_G),  n_samples= N)
-            print(" downsample G size ",downsample_G.shape)
-            # print("size W: ", W.shape, "size y", y.shape)
-            # assert y.shape[0] == W.shape[0]
-            hK = compute_kinship(downsample_G)
-            print("hK shape: ", hK.shape)
-            for snp in range(_G.shape[1]):
-                print("SNP #:", snp+1)
-                
-                
-                x = _G.T[snp].reshape(len(_G.T[snp]), 1)
-                # print("x:" , x.shape)
-                # print("y shape ", y.shape)
-               
-                down_x = downsample_data(pd.DataFrame(x), n_samples= N)
-                print("down x: " , down_x.shape)
-                n_analyzed += 1
-                # n = down_x.shape[0]
-                # print(n)
-                # try: 
-                # print("pass")
-                # y = asarray(y, float)
-                # print("asarray", y.shape)
-                # y= y.flatten()
-                # print("flatten", y.shape)
-                # exit()
-                # print(W)
-                pv = run_interaction(y=y, G=down_x, W=W, E=E, hK=hK)[0]
-                with open(str(22)+"pv_snp.txt", "w") as w: 
-                    print(f'Interaction test p-value: {pv}')
-                    w.write(f'{pv},{snp}\n')
-                w.close()
-                
-                # except Exception as e:
-                #     logging.error(f"Error running interaction: {e} ")
-                #     return   
-                _pv_int[snp] = pv
-                # print("success at snp", snp+1)
+        downsample_G = downsample_data(pd.DataFrame(_G),  n_samples= N)
+        if (downsample_G.shape[1] == 0):  #we've reached the end of the genome 
+            break
+        print(" downsample G size ",downsample_G.shape)
+        # print("size W: ", W.shape, "size y", y.shape)
+        # assert y.shape[0] == W.shape[0]
+        hK = compute_kinship(downsample_G)
+        print("hK shape: ", hK.shape)
+        for snp in range(_G.shape[1]):
+            print("SNP #:", snp+1)
+            x = _G.T[snp].reshape(len(_G.T[snp]), 1)
+            down_x = downsample_data(pd.DataFrame(x), n_samples= N)
+           
+            print("down x: " , down_x.shape)
+    
+            n_analyzed += 1
+      
+            pv = run_interaction(y=y, G=down_x, W=W, E=E, hK=hK)[0]
+            with open(f'{N}Sampleout/{PHENO_PATH}/{CHROM}pv_snp.txt', "a") as w: 
+                print(f'Interaction test p-value: {pv[0]}')
+                w.write(f'{pv[0]},{snp},{t.time()} \n')
+            w.close()
+            
+            # except Exception as e:
+            #     logging.error(f"Error running interaction: {e} ")
+            #     return   
+            _pv_int[snp] = pv
+            # print("success at snp", snp+1)
 
             print("Number of snps analyzed so far: ", n_analyzed)
             print("Number of batches analyzed so far: ", num_batch)
-
 
             if TESTS[0] in tests:
                 _bim = _bim.assign(pv_int=pd.Series(_pv_int, index=_bim.index))
@@ -380,7 +314,7 @@ def run_structlmm_test(y, W, E, G, bim, tests):
             print("ERROR bad range")
             return 0
         print('%.2f s elapsed' % t)
-        print("Total snps analyzed: ", n_analyzed)
+        print("Total snps analyzed: ", n_analyzed, " on Chromosome:", CHROM)
         pv_matrix.append(pd.concat(res))
     # Output
     # print(pv_matrix)
@@ -393,18 +327,20 @@ def run_structlmm_test(y, W, E, G, bim, tests):
 
 def run_interaction_analysis(y, W, E):
     # n = 43852
+    
     bedfile = "../../22418/UKB.merged/UK_F"
     try: 
-        (bim, fam, G) = read_plink(bedfile, verbose=False)
+        (bim, fam, G) = read_plink(bedfile, verbose=True)
         
-        """
-
-        """
+        # for i in range(1,23):
+        #     SNP_CHROM_ARR.append((str(i) , bim.chrom == str(i)))
+        
     except Exception as e:
         logging.error(f"Error reading bed file: {e} ")
         return
    
     # Now we call our refactored testing function
+
     print("Initating interaction test")
     pv_matrix = run_structlmm_test(y, W, E, G, bim, tests="interaction")
     return pv_matrix
@@ -469,44 +405,62 @@ def main():
     # print("Number of Cores : 2") 
     env_df =  pd.read_csv("../data/environment.csv", index_col=0)
     # print("env shape 1: ", env_df.shape)
-    pheno_df =  pd.read_csv("../data/temp2.csv", index_col=0).dropna(axis=0, inplace=False)
-    # env_df.dropna(axis=0, inplace=True)
-    # print("env shape drop na: ", env_df.shape)/
     env_df.drop(columns=INSTANCE_LABELS, inplace = False) # removing incomplete instance columns for biobank  
-    # print("env shape dropped cols: ", env_df.shape)
+
+    """
+    Educational scores : https://biobank.ndph.ox.ac.uk/ukb/label.cgi?id=76
+    "26414-0.0" England 
+    "26421-0.0" Wales
+    "26431-0.0" Scotland
+  
+    "21000-0.0" BMI : https://biobank.ndph.ox.ac.uk/showcase/field.cgi?tk=50VRyYWSf7chB79Fw27n0p4vtR3xq4Kp343167&id=21001
+    """
+    # pheno_data_df = pd.read_csv("../data/BMI_var.csv")
+    # pheno_data_df =  pd.read_csv("../data/edu_ethn_ea.csv", index_col=0) # education data 
+    pheno_data_df =  pd.read_csv("../data/temp2.csv", index_col=0)
+    global PHENO_PATH
+    PHENO_ID = "height1" #changes column name to pull phenotype data 
+    PHENO = "height" #names files after pheno tested
+    PHENO_PATH = f'{PHENO}_data'
+    pheno_df = pheno_data_df[[PHENO_ID]].dropna(axis=0, inplace=False)
+    # wales_edu_df = pheno_data_df["26421-0.0"]
+    # scotland_edu_df = pheno_data_df["26431-0.0"]
+    #Reshape to N x 1 array , using .values since Series
     total_df = pd.merge(pheno_df, env_df, on="eid", how="inner")
     total_df.dropna(axis=0 , inplace=True)
 
-    # print(" merged: ", total_df.shape)
-
-    env_df = total_df.drop(columns=["height1", "height2"], inplace=False)
-    # env_df.dropna(axis=0, inplace=True)
-    # print("env shape: ", env_df)
-    #499845
+    env_df = total_df.drop(columns=[PHENO_ID], inplace=False)
 
     E = normalize_env_matrix(env_df.values)  
-    # print("E    " , E[0: 5])
     fraction_to_sample = 0.001  # This will sample 10% of the data
-    # n = 500
     env_df_downsampled = downsample_data(pd.DataFrame(E), n_samples=N)
-    # print("env shape: ", env_df_downsampled.shape)
-    w_n = env_df_downsampled.shape[0]
-    W = ones(( w_n, 1)) # intercept (covariate matrix)
-    height_df = pd.DataFrame(total_df["height1"])
-    # print("height shape,", height_df.shape)
-    pheno_df_downsampled = downsample_data(height_df, n_samples=N)
-    # print("pheno shape", pheno_df_downsampled.shape, "env shape", env_df_downsampled.shape)
-    try: 
-        res = run_interaction_analysis(y = pheno_df_downsampled, W=W,E=env_df_downsampled)[0]
-    except Exception as e:
-        logging.error(e) 
-        return
-    res_df = pd.DataFrame(res)
-    print("Export")
     
-    if not os.path.exists("chr22out"):
-        os.makedirs("chr22out")
-    res_df.to_csv(f'chr22out/res_structlmm_{N}samples.csv', index=False)
+    W = ones((N, 1)) # intercept (covariate matrix)
+    pheno_df = pd.DataFrame(total_df[PHENO_ID])
+    # print("height shape,", height_df.shape)
+    print("Number samples:", N)
+    print("Phenotype: ",PHENO)
+    global CHROM
+    
+    pheno_df_downsampled = downsample_data(pheno_df, n_samples=N)
+    # print("pheno shape", pheno_df_downsampled.shape, "env shape", env_df_downsampled.shape)
+    for i in [22]: 
+    #go backwards from the 22 chr to the 1st
+        CHROM = str(i)
+        print(f'Analyzing {N} snps on Chromosome {CHROM}')
+        #print("Analyzing chromosome", CHROM)
+        try: 
+            res = run_interaction_analysis(y = pheno_df_downsampled, W=W,E=env_df_downsampled)[0]
+        except Exception as e:
+            print("ERROR on Chromosome: ", CHROM)
+            logging.error(e) 
+                # continue
+        res_df = pd.DataFrame(res)
+        print("Export")
+        outpath = f'{N}Sampleout/{PHENO}_data'
+        if not os.path.exists(outpath):
+            os.makedirs(outpath)
+        res_df.to_csv(f'{outpath}/{CHROM}_res_cellreg_{N}samples.csv', index=False)
 
 if __name__ == "__main__":
     main()
