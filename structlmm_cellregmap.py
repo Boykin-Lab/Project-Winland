@@ -220,8 +220,6 @@ def compute_kinship(X):
     
     return K
 
-
-
 def partition(df, p):
     """
     Input: 
@@ -246,7 +244,6 @@ def partition(df, p):
         print(batch)
         print()
     return batches 
-
 
 def run_structlmm_test(y, W, E, G, bim, tests):
     # Core testing logic from the original run_structlmm without reading the PLINK bed file
@@ -374,7 +371,6 @@ def example_interaction_analysis():
 
     return pv  # Optionally, you can return the p-value if you need it for further analysis
 
-
 def downsample_data(df, fraction=None, n_samples=None):
     # Usage:
 
@@ -403,9 +399,10 @@ def column_normalize(X):
 def main():
     # example_interaction_analysis()  
     # print("Number of Cores : 2") 
-    env_df =  pd.read_csv("../data/environment.csv", index_col=0)
+    env_df = pd.read_csv("../data/environment.csv", index_col=0)
     # print("env shape 1: ", env_df.shape)
-    env_df.drop(columns=INSTANCE_LABELS, inplace = False) # removing incomplete instance columns for biobank  
+
+    env_df.drop(columns=INSTANCE_LABELS, inplace=False)
 
     """
     Educational scores : https://biobank.ndph.ox.ac.uk/ukb/label.cgi?id=76
@@ -417,32 +414,44 @@ def main():
     """
     # pheno_data_df = pd.read_csv("../data/BMI_var.csv")
     # pheno_data_df =  pd.read_csv("../data/edu_ethn_ea.csv", index_col=0) # education data 
-    pheno_data_df =  pd.read_csv("../data/temp2.csv", index_col=0)
+
+    pheno_data_df = pd.read_csv("../data/temp2.csv", index_col=0)
     global PHENO_PATH
     PHENO_ID = "height1" #changes column name to pull phenotype data 
     PHENO = "height" #names files after pheno tested
     PHENO_PATH = f'{PHENO}_data'
     pheno_df = pheno_data_df[[PHENO_ID]].dropna(axis=0, inplace=False)
+
     # wales_edu_df = pheno_data_df["26421-0.0"]
     # scotland_edu_df = pheno_data_df["26431-0.0"]
     #Reshape to N x 1 array , using .values since Series
+
     total_df = pd.merge(pheno_df, env_df, on="eid", how="inner")
-    total_df.dropna(axis=0 , inplace=True)
+    total_df.dropna(axis=0, inplace=True)
 
     env_df = total_df.drop(columns=[PHENO_ID], inplace=False)
 
     E = normalize_env_matrix(env_df.values)  
-    fraction_to_sample = 0.001  # This will sample 10% of the data
-    env_df_downsampled = downsample_data(pd.DataFrame(E), n_samples=N)
-    
-    W = ones((N, 1)) # intercept (covariate matrix)
+
+    # Get common indices for downsampling
+    downsample_indices = np.random.choice(total_df.index, size=N, replace=False)
+
+    # Now downsample both phenotype and environment dataframes using the common indices
+    env_df_downsampled = pd.DataFrame(E).loc[downsample_indices]
+    pheno_df_downsampled = pheno_df.loc[downsample_indices]
+
+    # Check if indices match -> True if indices match
+    print("Indices match:", all(pheno_df_downsampled.index == env_df_downsampled.index))
+
+    W = ones((N, 1))  # intercept (covariate matrix)
+
     pheno_df = pd.DataFrame(total_df[PHENO_ID])
     # print("height shape,", height_df.shape)
     print("Number samples:", N)
     print("Phenotype: ",PHENO)
     global CHROM
     
-    pheno_df_downsampled = downsample_data(pheno_df, n_samples=N)
+    pheno_df_downsampled = pheno_df.loc[downsample_indices]
     # print("pheno shape", pheno_df_downsampled.shape, "env shape", env_df_downsampled.shape)
     for i in [22]: 
     #go backwards from the 22 chr to the 1st
@@ -461,6 +470,7 @@ def main():
         if not os.path.exists(outpath):
             os.makedirs(outpath)
         res_df.to_csv(f'{outpath}/{CHROM}_res_cellreg_{N}samples.csv', index=False)
+
 
 if __name__ == "__main__":
     main()
