@@ -37,15 +37,8 @@ ENV_RENAME_DICT = {
     "24507-0.0": "24507", "24508-0.0": "24508"
 }  
 
-# TODO: 
-# Make function to parse genomic data from bim indices 
-
-
 N = 10_000
 SNP_CHROM_ARR = []
-# CHROM = "22"
-#ranges for snps in the UK_LD.bim 
-
     
 logging.basicConfig(level=logging.INFO)
 def normalize_env_matrix(E, norm_type="linear_covariance"):
@@ -121,11 +114,6 @@ def create_snp_queue(G, bim, Isnp=None):
     
     # Query the specific SNPs using Isnp
     G, bim_out = gs.snp_query(G, bim, bim.chrom==CHROM)
-    
-    print(bim_out)
-    if bim_out.empty:
-        logging.error("Bad range, empty range")
-        return 
 
     # Define the imputation strategy for missing genotypic data
     imputer = SimpleImputer(missing_values=np.nan, strategy='constant')
@@ -140,65 +128,24 @@ def create_snp_queue(G, bim, Isnp=None):
         ]
     )
     # Create a queue of preprocessed genotypic data
-    # number of snps in the batch 
+    # batch_size = number of snps in the batch 
     queue = gs.GenoQueue(G, bim_out, batch_size=100, preprocess=preprocess, verbose=True)
     
     return queue
-"""
-Problems to solve: 
 
-How to split the data to downsample over the entire data set ?
-How many jobs will it take?
-Can we have the script use the linux(OSCAR) to reduce workload?
-How will batch size affect p-values? 
-
-Rather than downsampling within analysis - partion data in the downsample size, loop through
-
-Ensure downsample does not repeat inputs 
-"""
 def partition_dataframe(df, p):
     if p <= 0:
         raise ValueError("The number of partitions 'p' must be greater than 0")
-    
     indices = df.index.tolist()
     partitions = []
-
     partition_size = len(indices) // p
-
     for i in range(p):
         if i < p - 1:
             partition, indices = train_test_split(indices, test_size=len(indices) - partition_size, random_state=42 + i)
         else:
             partition = indices
-
         partitions.append(partition)
-
     return partitions
-
-
-# def snp_query(G, bim, Isnp):
-#     r"""
-#     Parameters
-#     ----------
-#     G : (`n_snps`, `n_inds`) array
-#         Genetic data
-#     bim : pandas.DataFrame (example : (bim.chrom == "22") ) 
-#         Variant annotation
-#     Isnp : bool array
-#         Variant filter
-
-    
-#     Returns
-#     -------
-#     G_out : (`n_snps`, `n_inds`) array
-#         filtered genetic data
-#     bim_out : dataframe
-#         filtered variant annotation
-#     """
-#     bim_out = bim[Isnp].reset_index(drop=True)
-#     G_out = G[bim_out.i.values]
-#     bim_out.i = pd.Series(sp.arange(bim_out.shape[0]), index=bim_out.index)
-#     return G_out, bim_out
 
 def compute_kinship(X):
     """
@@ -219,8 +166,6 @@ def compute_kinship(X):
     K = (1.0 / X.shape[1]) * np.dot(X_std, X_std.T)
     
     return K
-
-
 
 def partition(df, p):
     """
@@ -254,7 +199,6 @@ def run_structlmm_test(y, W, E, G, bim, tests):
     global PHENO_PATH
     TESTS = ['interaction', 'association']
     
-
     pv_matrix = []
     num_batch = 0
     queue = create_snp_queue(G, bim)
@@ -291,15 +235,10 @@ def run_structlmm_test(y, W, E, G, bim, tests):
             pv = run_interaction(y=y, G=down_x, W=W, E=E, hK=hK)[0]
             with open(f'{N}Sampleout/{PHENO_PATH}/{CHROM}pv_snp.txt', "a") as w: 
                 print(f'Interaction test p-value: {pv[0]}')
-                w.write(f'{pv[0]},{snp} \n')
+                w.write(f'{pv[0]},{snp},{time.time()} \n')
             w.close()
-            
-            # except Exception as e:
-            #     logging.error(f"Error running interaction: {e} ")
-            #     return   
             _pv_int[snp] = pv
-            # print("success at snp", snp+1)
-
+        
             print("Number of snps analyzed so far: ", n_analyzed)
             print("Number of batches analyzed so far: ", num_batch)
 
@@ -316,30 +255,18 @@ def run_structlmm_test(y, W, E, G, bim, tests):
         print('%.2f s elapsed' % t)
         print("Total snps analyzed: ", n_analyzed, " on Chromosome:", CHROM)
         pv_matrix.append(pd.concat(res))
-    # Output
-    # print(pv_matrix)
     
     # pv_matrix = pd.concat(pv_matrix)
     # pv_matrix.reset_index(inplace=True, drop=True)
-    
-
     return pv_matrix
 
 def run_interaction_analysis(y, W, E):
-    # n = 43852
-    
     bedfile = "../../22418/UKB.merged/UK_F"
     try: 
         (bim, fam, G) = read_plink(bedfile, verbose=True)
-        
-        # for i in range(1,23):
-        #     SNP_CHROM_ARR.append((str(i) , bim.chrom == str(i)))
-        
     except Exception as e:
         logging.error(f"Error reading bed file: {e} ")
         return
-   
-    # Now we call our refactored testing function
 
     print("Initating interaction test")
     pv_matrix = run_structlmm_test(y, W, E, G, bim, tests="interaction")
@@ -378,8 +305,8 @@ def example_interaction_analysis():
 def downsample_data(df, fraction=None, n_samples=None):
     # Usage:
 
-    # If you prefer to downsample by a specific number of samples:
-    # n_samples_to_sample = 10000
+    # If you prefer to downsample by a specific percentage of samples:
+    # n_samples_to_sample = .1 10% of samples 
     # env_df_downsampled = downsample_data(env_df, n_samples=n_samples_to_sample)
     # pheno_df_downsampled = downsample_data(pheno_df, n_samples=n_samples_to_sample)
 
@@ -396,65 +323,63 @@ def column_normalize(X):
     mean=0, std=1
     '''
     X = asarray(X, float)
-
     with errstate(divide="raise", invalid="raise"):
         return (X - X.mean(0)) / X.std(0)
 
 def main():
-    # example_interaction_analysis()  
-    # print("Number of Cores : 2") 
-    env_df =  pd.read_csv("../data/environment.csv", index_col=0)
-    # print("env shape 1: ", env_df.shape)
+   
+    env_df =  pd.read_csv("../data/environment.csv", index_col=0) # pull environmnet data 
     env_df.drop(columns=INSTANCE_LABELS, inplace = False) # removing incomplete instance columns for biobank  
-
     """
     Educational scores : https://biobank.ndph.ox.ac.uk/ukb/label.cgi?id=76
     "26414-0.0" England 
     "26421-0.0" Wales
     "26431-0.0" Scotland
-  
     "21000-0.0" BMI : https://biobank.ndph.ox.ac.uk/showcase/field.cgi?tk=50VRyYWSf7chB79Fw27n0p4vtR3xq4Kp343167&id=21001
+    """
+    global PHENO_PATH
+
+    """
+    TODO: If you want to change the phenotype being studied change the data_df and PHENO variable
+    The pheno_data_df are commented out below to avoid pulling data unnecessarily, the variable ID are listed in the comment above
     """
     # pheno_data_df = pd.read_csv("../data/BMI_var.csv")
     # pheno_data_df =  pd.read_csv("../data/edu_ethn_ea.csv", index_col=0) # education data 
     pheno_data_df =  pd.read_csv("../data/temp2.csv", index_col=0)
-    global PHENO_PATH
-    PHENO_ID = "height1" #changes column name to pull phenotype data 
-    PHENO = "height" #names files after pheno tested
+
+    PHENO_ID = "height1" #changes column name to pull phenotype data, change to the variable ID 
+    PHENO = "height" #names files after pheno tested, change to name of phenotype accordingly 
+    
     PHENO_PATH = f'{PHENO}_data'
     pheno_df = pheno_data_df[[PHENO_ID]].dropna(axis=0, inplace=False)
     # wales_edu_df = pheno_data_df["26421-0.0"]
     # scotland_edu_df = pheno_data_df["26431-0.0"]
+
     #Reshape to N x 1 array , using .values since Series
     total_df = pd.merge(pheno_df, env_df, on="eid", how="inner")
     total_df.dropna(axis=0 , inplace=True)
 
     env_df = total_df.drop(columns=[PHENO_ID], inplace=False)
-
     E = normalize_env_matrix(env_df.values)  
-    fraction_to_sample = 0.001  # This will sample 10% of the data
     env_df_downsampled = downsample_data(pd.DataFrame(E), n_samples=N)
     
     W = ones((N, 1)) # intercept (covariate matrix)
     pheno_df = pd.DataFrame(total_df[PHENO_ID])
-    # print("height shape,", height_df.shape)
     print("Number samples:", N)
     print("Phenotype: ",PHENO)
     global CHROM
     
     pheno_df_downsampled = downsample_data(pheno_df, n_samples=N)
-    # print("pheno shape", pheno_df_downsampled.shape, "env shape", env_df_downsampled.shape)
     for i in [22]: 
-    #go backwards from the 22 chr to the 1st
+    #interate over the number of chromosomes (1-22) specified in the loop
         CHROM = str(i)
         print(f'Analyzing {N} snps on Chromosome {CHROM}')
-        #print("Analyzing chromosome", CHROM)
         try: 
             res = run_interaction_analysis(y = pheno_df_downsampled, W=W,E=env_df_downsampled)[0]
         except Exception as e:
             print("ERROR on Chromosome: ", CHROM)
             logging.error(e) 
-                # continue
+                # sometime there are errors with this that come from white space issues just reset the spacing how it is now
         res_df = pd.DataFrame(res)
         print("Export")
         outpath = f'{N}Sampleout/{PHENO}_data'
